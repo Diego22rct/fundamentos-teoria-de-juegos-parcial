@@ -1,107 +1,105 @@
 #include <SDL3/SDL.h>
 #include <GL/glew.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h> // MUY IMPORTANTE EN SDL3
 #include <iostream>
-#include <vector>
+#include <cmath>
 
-const int WIN_W = 800;
-const int WIN_H = 600;
-
-// =============================================================================
-// 1. CÓDIGO DE LOS SHADERS (GLSL)
-// =============================================================================
-// Vertex Shader: Recibe las coordenadas de los vértices
-const char* vertexShaderSource = R"(
+// ?? Shaders ??????????????????????????????????????????????????????
+const char* vertexSrc = R"(
     #version 330 core
-    layout (location = 0) in vec2 aPos;
+    layout(location = 0) in vec3 aPos;
+
+    uniform vec2 offset;   // posición en pantalla
+    uniform vec2 escala;   // tamaño del rectángulo
+
     void main() {
-        gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
+        vec3 pos = aPos;
+        pos.x = pos.x * escala.x + offset.x;
+        pos.y = pos.y * escala.y + offset.y;
+        gl_Position = vec4(pos, 1.0);
     }
 )";
 
-// Fragment Shader: Aplica el color que le enviamos desde C++ (Uniform)
-const char* fragmentShaderSource = R"(
+const char* fragmentSrc = R"(
     #version 330 core
     out vec4 FragColor;
-    uniform vec4 u_Color; 
+
+    uniform vec3 color;    // color del objeto
+
     void main() {
-        FragColor = u_Color;
+        FragColor = vec4(color, 1.0);
     }
 )";
 
-// Función auxiliar para compilar shaders y no ensuciar el main
-GLuint CompileShaders() {
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
+// ?? Compilar shader ???????????????????????????????????????????????
+GLuint compilarShader(GLenum tipo, const char* src) {
+    GLuint shader = glCreateShader(tipo);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
 
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    GLuint shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    return shaderProgram;
+    GLint ok;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[512];
+        glGetShaderInfoLog(shader, 512, nullptr, log);
+        SDL_Log("Error shader: %s", log);
+    }
+    return shader;
 }
 
-// =============================================================================
-// MAIN
-// =============================================================================
 int main(int argc, char* argv[]) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) return 1;
 
+    // ?? Init ??????????????????????????????????????????????????????
+    SDL_Init(SDL_INIT_VIDEO);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    SDL_Window* window = SDL_CreateWindow("Escena Parcial", WIN_W, WIN_H, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    SDL_GLContext glContext = SDL_GL_CreateContext(window);
+    SDL_Window* win = SDL_CreateWindow("Escena Parcial - UNDERTALE", 800, 600, SDL_WINDOW_OPENGL);
+    SDL_GLContext ctx = SDL_GL_CreateContext(win);
+    SDL_GL_SetSwapInterval(1); // VSync ON
 
     glewExperimental = GL_TRUE;
     glewInit();
 
-    // 1. Compilar el programa de Shaders
-    GLuint shaderProgram = CompileShaders();
+    // ?? Geometría base (Cuadrado 1x1 centrado) ????????????????????
+    float verticesBase[] = {
+        -0.5f,  0.5f, 0.0f,
+        -0.5f, -0.5f, 0.0f,
+         0.5f,  0.5f, 0.0f,
 
-    // Obtener la ubicación del uniform "u_Color" para enviarle colores después
-    GLint colorUniformLoc = glGetUniformLocation(shaderProgram, "u_Color");
-
-    // =============================================================================
-    // 2. DEFINIR GEOMETRÍA (Vértices)
-    // =============================================================================
-
-    // OBJETO 1: Cuerpo base de Pikachu (Un rectángulo compuesto por 2 triángulos)
-    // Las coordenadas en OpenGL van de -1.0 a 1.0
-    float cuerpoVertices[] = {
-        // Primer triángulo
-        -0.3f, -0.4f, // Abajo izquierda
-         0.3f, -0.4f, // Abajo derecha
-        -0.3f,  0.2f, // Arriba izquierda
-        // Segundo triángulo
-         0.3f, -0.4f, // Abajo derecha
-         0.3f,  0.2f, // Arriba derecha
-        -0.3f,  0.2f  // Arriba izquierda
+         -0.5f, -0.5f, 0.0f,
+          0.5f, -0.5f, 0.0f,
+          0.5f,  0.5f, 0.0f,
     };
 
-    GLuint VAO_Cuerpo, VBO_Cuerpo;
-    glGenVertexArrays(1, &VAO_Cuerpo);
-    glGenBuffers(1, &VBO_Cuerpo);
+    GLuint vbo, vao;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verticesBase), verticesBase, GL_STATIC_DRAW);
 
-    glBindVertexArray(VAO_Cuerpo);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_Cuerpo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cuerpoVertices), cuerpoVertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    // =============================================================================
-    // BUCLE PRINCIPAL
-    // =============================================================================
+    // ?? Shader program ????????????????????????????????????????????
+    GLuint vert = compilarShader(GL_VERTEX_SHADER, vertexSrc);
+    GLuint frag = compilarShader(GL_FRAGMENT_SHADER, fragmentSrc);
+
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vert);
+    glAttachShader(prog, frag);
+    glLinkProgram(prog);
+    glDeleteShader(vert);
+    glDeleteShader(frag);
+
+    GLint locOffset = glGetUniformLocation(prog, "offset");
+    GLint locEscala = glGetUniformLocation(prog, "escala");
+    GLint locColor  = glGetUniformLocation(prog, "color");
+
+    // ?? Loop ??????????????????????????????????????????????????????
     bool running = true;
     SDL_Event ev;
 
@@ -111,29 +109,67 @@ int main(int argc, char* argv[]) {
             if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_ESCAPE) running = false;
         }
 
-        // Color de fondo (Cielo)
-        glClearColor(0.4f, 0.7f, 0.9f, 1.0f);
+        // Fondo Negro
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Usar nuestro Shader
-        glUseProgram(shaderProgram);
+        glUseProgram(prog);
+        glBindVertexArray(vao);
 
-        // --- DIBUJAR OBJETO 1 (Cuerpo) ---
-        // Enviamos el color Amarillo por Uniform (R, G, B, Alpha)
-        glUniform4f(colorUniformLoc, 0.98f, 0.84f, 0.11f, 1.0f);
-        glBindVertexArray(VAO_Cuerpo);
-        glDrawArrays(GL_TRIANGLES, 0, 6); // 6 vértices = 2 triángulos
+        float tiempo = SDL_GetTicks() / 1000.0f;
 
-        SDL_GL_SwapWindow(window);
+        // --- SISTEMA DE DIBUJO (Múltiples Draw Calls Reutilizando el Cuadrado) ---
+        // Función Lambda local para facilitar dibujar rectángulos rápidamente
+        auto DrawRect = [&](float x, float y, float w, float h, float r, float g, float b) {
+            glUniform2f(locOffset, x, y);
+            glUniform2f(locEscala, w, h);
+            glUniform3f(locColor, r, g, b);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        };
+
+        // 1. CAJA DE COMBATE (Bordes Blancos)
+        float boxY = -0.2f;
+        float bxW = 0.6f;
+        float bxH = 0.6f;
+        float thick = 0.02f; // Grosor
+        DrawRect(0.0f, boxY - (bxH/2.0f), bxW, thick,  1.0f, 1.0f, 1.0f); // Abajo
+        DrawRect(0.0f, boxY + (bxH/2.0f), bxW, thick,  1.0f, 1.0f, 1.0f); // Arriba
+        DrawRect(-(bxW/2.0f), boxY, thick, bxH + thick, 1.0f, 1.0f, 1.0f); // Izquierda
+        DrawRect( (bxW/2.0f), boxY, thick, bxH + thick, 1.0f, 1.0f, 1.0f); // Derecha
+
+        // 2. BARRA DE VIDA
+        DrawRect(0.0f, -0.6f, 0.4f, 0.05f,  0.8f, 0.0f, 0.0f);  // Fondo Rojo
+        DrawRect(-0.1f, -0.6f, 0.2f, 0.05f, 1.0f, 1.0f, 0.0f);  // Vida Actual Amarilla
+
+        // 3. SANS (Cabeza base)
+        DrawRect(0.0f,  0.45f, 0.35f, 0.35f, 1.0f, 1.0f, 1.0f); // Cara Blanca
+        DrawRect(0.0f,  0.35f, 0.2f,  0.05f, 0.0f, 0.0f, 0.0f); // Boca Negra
+        DrawRect(-0.08f,0.48f, 0.08f, 0.08f, 0.0f, 0.0f, 0.0f); // Ojo Izq Negro
+
+        // 4. OJO DERECHO (Punto extra Animado)
+        float brilloAzul = (sin(tiempo * 5.0f) + 1.0f) / 2.0f; 
+        DrawRect(0.08f, 0.48f, 0.08f, 0.08f, 0.0f, brilloAzul, 1.0f);
+
+        // 5. HUESOS (Punto extra Animado)
+        float movX = cos(tiempo * 3.0f) * 0.2f;
+        DrawRect(movX - 0.1f, boxY, 0.03f, 0.2f, 0.9f, 0.9f, 0.9f);
+        DrawRect(movX + 0.1f, boxY, 0.03f, 0.2f, 0.9f, 0.9f, 0.9f);
+
+        // 6. ALMA (Corazón del Jugador, formado por 2 rectángulos)
+        float heartY = boxY + (sin(tiempo * 4.0f) * 0.05f);
+        DrawRect(0.0f,   heartY,        0.1f,  0.08f, 1.0f, 0.0f, 0.0f); // Base
+        DrawRect(-0.03f, heartY+0.04f, 0.04f, 0.04f, 1.0f, 0.0f, 0.0f); // Oreja Izq
+        DrawRect( 0.03f, heartY+0.04f, 0.04f, 0.04f, 1.0f, 0.0f, 0.0f); // Oreja Der
+
+        SDL_GL_SwapWindow(win);
     }
 
-    // Limpieza de memoria
-    glDeleteVertexArrays(1, &VAO_Cuerpo);
-    glDeleteBuffers(1, &VBO_Cuerpo);
-    glDeleteProgram(shaderProgram);
-    SDL_GL_DestroyContext(glContext);
-    SDL_DestroyWindow(window);
+    // ?? Limpieza ??????????????????????????????????????????????????
+    glDeleteProgram(prog);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
+    SDL_GL_DestroyContext(ctx);
+    SDL_DestroyWindow(win);
     SDL_Quit();
-
     return 0;
 }
