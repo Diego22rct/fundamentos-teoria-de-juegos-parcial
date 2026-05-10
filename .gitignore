@@ -1,0 +1,17 @@
+# Visual Studio
+.vs/
+*.user
+*.aps
+*.ncb
+*.suo
+*.opensdf
+*.sdf
+*.db
+*.VC.db
+*.VC.opendb
+
+# Build folders
+x64/
+x86/
+Debug/
+Release/
